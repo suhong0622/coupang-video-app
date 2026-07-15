@@ -1,0 +1,125 @@
+import os
+import uuid
+from flask import Flask, request, render_template, send_from_directory, flash, redirect, url_for, Response
+
+from video_engine import build_video
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
+OUTPUT_DIR = os.path.join(BASE_DIR, "outputs")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+app = Flask(__name__)
+app.secret_key = "local-dev-only"  # 개인 로컬 실행용이라 간단하게 둠
+
+# .env 파일이 있으면 읽어서 환경변수로 등록 (python-dotenv 없이 직접 처리)
+def load_env_file():
+    env_path = os.path.join(BASE_DIR, ".env")
+    if os.path.exists(env_path):
+        with open(env_path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                os.environ.setdefault(key.strip(), value.strip())
+
+load_env_file()
+
+# ---------------------------------------------------------------------------
+# 접근 제한: 나 혼자만 쓸 수 있도록 아이디/비밀번호로 잠금
+# .env 에 SITE_PASSWORD 를 설정하면 잠금이 켜짐 (설정 안 하면 잠금 없이 접근 가능)
+# ---------------------------------------------------------------------------
+SITE_USER = os.environ.get("SITE_USER", "admin")
+SITE_PASSWORD = os.environ.get("SITE_PASSWORD")
+
+
+def check_auth(username, password):
+    return username == SITE_USER and password == SITE_PASSWORD
+
+
+def require_login():
+    return Response(
+        "로그인이 필요합니다.", 401,
+        {"WWW-Authenticate": 'Basic realm="Scene Maker"'},
+    )
+
+
+@app.before_request
+def restrict_access():
+    if not SITE_PASSWORD:
+        return  # 비밀번호 미설정 시 잠금 없음 (로컬 개인 실행 기본값)
+    auth = request.authorization
+    if not auth or not check_auth(auth.username, auth.password):
+        return require_login()
+
+
+@app.route("/", methods=["GET"])
+def index():
+    return render_template("index.html")
+
+
+@app.route("/generate", methods=["POST"])
+def generate():
+    product_name = request.form.get("product_name", "").strip()
+    price_tag = request.form.get("price_tag", "").strip()
+    script_text = request.form.get("script", "").strip()
+    voice_id = request.form.get("voice_id", "").strip() or None
+
+    api_key = os.environ.get("TYPECAST_API_KEY") or None
+
+    if not script_text:
+        flash("대본을 입력해주세요.")
+        return redirect(url_for("index"))
+
+    images = request.files.getlist("product_images")
+    images = [img for img in images if img and img.filename]
+    if not images:
+        flash("상품 이미지를 최소 1장 업로드해주세요.")
+        return redirect(url_for("index"))
+
+    job_id = uuid.uuid4().hex[:10]
+    job_upload_dir = os.path.join(UPLOAD_DIR, job_id)
+    os.makedirs(job_upload_dir, exist_ok=True)
+
+    saved_image_paths = []
+    for i, img in enumerate(images):
+        ext = os.path.splitext(img.filename)[1] or ".jpg"
+        save_path = os.path.join(job_upload_dir, f"product_{i}{ext}")
+        img.save(save_path)
+        saved_image_paths.append(save_path)
+
+    work_dir = os.path.join(UPLOAD_DIR, job_id, "work")
+    output_filename = f"video_{job_id}.mp4"
+    output_path = os.path.join(OUTPUT_DIR, output_filename)
+
+    try:
+        build_video(
+            script_text=script_text,
+            product_images=saved_image_paths,
+            product_name=product_name,
+            price_tag=price_tag,
+            work_dir=work_dir,
+            output_path=output_path,
+            api_key=api_key,
+            voice_id=voice_id,
+        )
+    except Exception as e:
+        flash(f"영상 생성 중 오류가 발생했습니다: {e}")
+        return redirect(url_for("index"))
+
+    return render_template("result.html", video_filename=output_filename)
+
+
+@app.route("/download/<path:filename>")
+def download(filename):
+    return send_from_directory(OUTPUT_DIR, filename, as_attachment=False)
+
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    is_local = os.environ.get("PORT") is None
+    if is_local:
+        print(f"\n브라우저에서 http://localhost:{port} 으로 접속하세요.\n")
+    app.run(host="0.0.0.0", port=port, debug=is_local)

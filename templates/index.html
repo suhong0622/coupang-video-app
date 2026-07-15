@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>씬메이커 — 대본으로 영상 만들기</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<div class="slate">
+  <div class="slate-row">
+    <span class="slate-label">SCENE MAKER</span>
+    <span class="slate-label">TAKE 01</span>
+  </div>
+</div>
+
+<main class="wrap">
+  <header class="hero">
+    <h1>대본 하나로<br>제품 영상을 완성하세요</h1>
+    <p class="sub">상품 사진과 대본만 넣으면, 장면별로 나눠 음성과 자막을 입힌 영상을 만들어드려요.</p>
+  </header>
+
+  {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      <div class="flash">
+        {% for m in messages %}<p>⚠ {{ m }}</p>{% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+
+  <form action="/generate" method="post" enctype="multipart/form-data" class="board">
+
+    <section class="card">
+      <div class="card-head"><span class="tc">00:00</span><h2>상품 정보</h2></div>
+      <div class="field-row">
+        <label>
+          <span>상품명</span>
+          <input type="text" name="product_name" placeholder="예: 무선 노이즈캔슬링 이어폰">
+        </label>
+        <label>
+          <span>가격 표시</span>
+          <input type="text" name="price_tag" placeholder="예: 29,900원">
+        </label>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><span class="tc">00:01</span><h2>상품 이미지</h2></div>
+      <p class="hint">여러 장 올리면 장면 순서대로 자동 배치돼요. (예: 1번 이미지 → 1번째 장면)</p>
+      <input type="file" name="product_images" multiple accept="image/*" required>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><span class="tc">00:02</span><h2>대본</h2></div>
+      <p class="hint">장면을 나누고 싶은 곳에서 <b>엔터를 두 번</b> 눌러 빈 줄을 넣어주세요. 한 덩어리 = 한 장면이에요.</p>
+      <textarea name="script" rows="8" required placeholder="이거 하나로 인생템 찾았어요.
+
+노이즈 캔슬링에 배터리는 24시간까지 갑니다.
+
+지금 이 가격, 놓치면 후회해요."></textarea>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><span class="tc">00:03</span><h2>목소리 (선택)</h2></div>
+      <p class="hint">타입캐스트에서 고른 보이스 ID를 붙여넣으세요. 비워두면 임시 테스트 음성으로 만들어집니다.</p>
+      <input type="text" name="voice_id" placeholder="예: tc_672c5f5ce59fac2a48faeaee">
+    </section>
+
+    <button type="submit" class="cta">영상 만들기 ▶</button>
+    <p class="hint center">이미지 수와 대본 길이에 따라 완성까지 30초~수 분 걸릴 수 있어요.</p>
+  </form>
+</main>
+</body>
+</html>

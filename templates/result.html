@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>영상 완성 — 씬메이커</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<div class="slate">
+  <div class="slate-row">
+    <span class="slate-label">SCENE MAKER</span>
+    <span class="slate-label">DONE</span>
+  </div>
+</div>
+
+<main class="wrap">
+  <header class="hero">
+    <h1>영상이 완성됐어요</h1>
+    <p class="sub">아래에서 바로 확인하고 다운로드하세요.</p>
+  </header>
+
+  <section class="card center">
+    <video controls src="{{ url_for('download', filename=video_filename) }}" class="preview"></video>
+    <div class="actions">
+      <a href="{{ url_for('download', filename=video_filename) }}" download class="cta secondary">다운로드</a>
+      <a href="/" class="cta">새 영상 만들기</a>
+    </div>
+  </section>
+</main>
+</body>
+</html>
