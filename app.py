@@ -1,8 +1,11 @@
 import os
 import uuid
 from flask import Flask, request, render_template, send_from_directory, flash, redirect, url_for, Response
+from PIL import Image
 
-from video_engine import build_video
+from video_engine import build_video, is_video_file
+
+MAX_IMAGE_DIMENSION = 1600  # 이보다 큰 사진은 자동으로 줄여서 메모리 사용량을 낮춘다
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
@@ -12,6 +15,7 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 app = Flask(__name__)
 app.secret_key = "local-dev-only"  # 개인 로컬 실행용이라 간단하게 둠
+app.config["MAX_CONTENT_LENGTH"] = 80 * 1024 * 1024  # 요청 전체 최대 80MB (메모리 보호용)
 
 # .env 파일이 있으면 읽어서 환경변수로 등록 (python-dotenv 없이 직접 처리)
 def load_env_file():
@@ -91,6 +95,18 @@ def generate():
         ext = os.path.splitext(img.filename)[1] or ".jpg"
         save_path = os.path.join(job_upload_dir, f"product_{i}{ext}")
         img.save(save_path)
+
+        # 사진(영상 아님)이고, 너무 크면 메모리 절약을 위해 축소해서 다시 저장
+        if not is_video_file(save_path):
+            try:
+                with Image.open(save_path) as im:
+                    im = im.convert("RGB")
+                    if max(im.size) > MAX_IMAGE_DIMENSION:
+                        im.thumbnail((MAX_IMAGE_DIMENSION, MAX_IMAGE_DIMENSION), Image.LANCZOS)
+                    im.save(save_path, quality=88, optimize=True)
+            except Exception as e:
+                print(f"[경고] 이미지 축소 실패, 원본 그대로 사용: {e}")
+
         saved_image_paths.append(save_path)
 
     work_dir = os.path.join(UPLOAD_DIR, job_id, "work")
