@@ -68,6 +68,7 @@ def generate():
     voice_id = request.form.get("voice_id", "").strip() or None
 
     api_key = os.environ.get("TYPECAST_API_KEY") or None
+    gemini_api_key = os.environ.get("GEMINI_API_KEY") or None
 
     if not script_text:
         flash("대본을 입력해주세요.")
@@ -75,8 +76,10 @@ def generate():
 
     images = request.files.getlist("product_images")
     images = [img for img in images if img and img.filename]
-    if not images:
-        flash("상품 이미지를 최소 1장 업로드해주세요.")
+    has_ai_scene = "[AI:" in script_text.upper() or "[ai:" in script_text
+
+    if not images and not has_ai_scene:
+        flash("상품 사진/영상을 최소 1개 업로드하거나, 대본에 [AI: ...] 장면을 넣어주세요.")
         return redirect(url_for("index"))
 
     job_id = uuid.uuid4().hex[:10]
@@ -104,6 +107,7 @@ def generate():
             output_path=output_path,
             api_key=api_key,
             voice_id=voice_id,
+            gemini_api_key=gemini_api_key,
         )
     except Exception as e:
         flash(f"영상 생성 중 오류가 발생했습니다: {e}")

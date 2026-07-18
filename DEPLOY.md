@@ -31,14 +31,17 @@
    - **Instance Type**: **Free** 선택
    - (Dockerfile을 자동으로 인식해서 나머지는 그대로 두면 됩니다)
 5. 아래로 스크롤 → **Environment Variables** 항목에서 **Add Environment Variable** 클릭
-   - Key: `TYPECAST_API_KEY`
-   - Value: 발급받은 본인의 타입캐스트 API 키
+   - Key: `TYPECAST_API_KEY` / Value: 발급받은 타입캐스트 키
+   - Key: `SITE_PASSWORD` / Value: 원하는 비밀번호
+   - (선택) Key: `GEMINI_API_KEY` / Value: 대본에 `[AI: ...]` 장면을 쓸 계획이면 제미나이 API 키
 6. **Create Web Service** 클릭
 
 5~10분 정도 기다리면 (화면에 로그가 주르륵 올라감) 상단에
 `https://my-coupang-video.onrender.com` 같은 주소가 생겨요.
 
 **이 주소가 이제 내 웹사이트예요.** 북마크해두고 언제든 접속하면 됩니다.
+
+⚠️ **AI 영상 생성(`[AI: ...]`) 기능을 쓸 경우 주의**: Veo 영상 생성은 몇 분씩 걸릴 수 있는데, 무료 호스팅은 요청 하나가 너무 오래 걸리면 중간에 끊어버릴 수 있어요 (플랫폼마다 제한 시간이 달라요). 이 기능을 자주, 안정적으로 쓸 계획이라면 나중에 "백그라운드에서 처리하고 완료되면 알려주는" 방식으로 구조를 바꿔야 할 수도 있어요 — 지금은 일단 되는지부터 확인해보고, 자주 끊기면 그때 다시 알려주세요.
 
 ---
 

@@ -1,3 +1,4 @@
 flask
 pillow
 typecast-python
+google-genai

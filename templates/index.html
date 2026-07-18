@@ -45,19 +45,22 @@
     </section>
 
     <section class="card">
-      <div class="card-head"><span class="tc">00:01</span><h2>상품 이미지</h2></div>
-      <p class="hint">여러 장 올리면 장면 순서대로 자동 배치돼요. (예: 1번 이미지 → 1번째 장면)</p>
-      <input type="file" name="product_images" multiple accept="image/*" required>
+      <div class="card-head"><span class="tc">00:01</span><h2>상품 사진 / 영상 (선택)</h2></div>
+      <p class="hint">여러 개 올리면 장면 순서대로 자동 배치돼요. 사진과 영상을 섞어도 되고,
+      대본에서 [AI: ...]로 표시한 장면은 이 파일들과 무관하게 AI가 새로 생성해요.</p>
+      <input type="file" name="product_images" multiple accept="image/*,video/*">
     </section>
 
     <section class="card">
       <div class="card-head"><span class="tc">00:02</span><h2>대본</h2></div>
-      <p class="hint">장면을 나누고 싶은 곳에서 <b>엔터를 두 번</b> 눌러 빈 줄을 넣어주세요. 한 덩어리 = 한 장면이에요.</p>
-      <textarea name="script" rows="8" required placeholder="이거 하나로 인생템 찾았어요.
+      <p class="hint">장면을 나누고 싶은 곳에서 <b>엔터를 두 번</b> 눌러 빈 줄을 넣어주세요. 한 덩어리 = 한 장면이에요.<br>
+      특정 장면을 AI가 새로 생성하게 하려면, 그 장면 맨 첫 줄에 <code>[AI: 만들고 싶은 장면 설명]</code>을 적어주세요.</p>
+      <textarea name="script" rows="10" required placeholder="이거 하나로 인생템 찾았어요.
 
-노이즈 캔슬링에 배터리는 24시간까지 갑니다.
+[AI: 이 무릎보호대를 낀 남자가 공원에서 활기차게 뛰는 모습, 아침 햇살, 시네마틱]
+착용하고 마음껏 뛰어보세요.
 
-지금 이 가격, 놓치면 후회해요."></textarea>
+지금 이 가격에 놓치면 후회해요."></textarea>
     </section>
 
     <section class="card">
