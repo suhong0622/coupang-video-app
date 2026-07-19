@@ -1,5 +1,7 @@
 import os
 import uuid
+import json
+import time
 import threading
 import traceback
 from flask import Flask, request, render_template, send_from_directory, flash, redirect, url_for, Response
@@ -8,6 +10,7 @@ from PIL import Image
 from video_engine import build_video, is_video_file
 
 MAX_IMAGE_DIMENSION = 960  # 이보다 큰 사진은 자동으로 줄여서 메모리 사용량을 낮춘다 (무료 서버 512MB 대응)
+JOB_STALE_SECONDS = 8 * 60  # 이 시간 넘게 "처리 중"이면 실패한 것으로 간주 (무한 대기 방지)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
@@ -20,13 +23,34 @@ app.secret_key = "local-dev-only"  # 개인 로컬 실행용이라 간단하게 
 app.config["MAX_CONTENT_LENGTH"] = 80 * 1024 * 1024  # 요청 전체 최대 80MB (메모리 보호용)
 
 # ---------------------------------------------------------------------------
-# 작업 상태 저장소: 영상 생성을 백그라운드 스레드에서 처리하고,
-# 진행 상태를 여기에 기록해서 "처리 중" 화면이 확인할 수 있게 함.
-# 이렇게 하면 실제 영상 처리가 오래 걸려도 웹 서버 자체는 항상 즉시 응답 가능한 상태를 유지해서,
-# Render의 헬스체크가 타임아웃 나는 문제를 근본적으로 피할 수 있음.
+# 작업 상태 저장: 메모리가 아니라 "디스크 파일"에 기록한다.
+# 이유: 처리 도중 서버 프로세스가 재시작되면(메모리 부족 등) 메모리에 저장했던
+# 진행 상태는 통째로 사라지지만, 디스크 파일은 프로세스가 바뀌어도 그대로 남아있다.
 # ---------------------------------------------------------------------------
-JOBS = {}
-JOBS_LOCK = threading.Lock()
+def job_status_path(job_id):
+    return os.path.join(UPLOAD_DIR, job_id, "status.json")
+
+
+def write_job_status(job_id, data):
+    path = job_status_path(job_id)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp_path = path + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(data, f)
+    os.replace(tmp_path, path)  # 원자적 교체 (쓰다가 중간에 깨지는 것 방지)
+
+
+def read_job_status(job_id):
+    path = job_status_path(job_id)
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        data["_updated_at"] = os.path.getmtime(path)
+        return data
+    except Exception:
+        return None
 
 # .env 파일이 있으면 읽어서 환경변수로 등록 (python-dotenv 없이 직접 처리)
 def load_env_file():
@@ -85,7 +109,7 @@ def index():
 
 def process_job(job_id, script_text, saved_image_paths, product_name, price_tag,
                  api_key, voice_id, gemini_api_key):
-    """백그라운드 스레드에서 실제 영상 생성을 수행하고 결과를 JOBS에 기록."""
+    """백그라운드 스레드에서 실제 영상 생성을 수행하고 결과를 디스크에 기록."""
     work_dir = os.path.join(UPLOAD_DIR, job_id, "work")
     output_filename = f"video_{job_id}.mp4"
     output_path = os.path.join(OUTPUT_DIR, output_filename)
@@ -102,12 +126,10 @@ def process_job(job_id, script_text, saved_image_paths, product_name, price_tag,
             voice_id=voice_id,
             gemini_api_key=gemini_api_key,
         )
-        with JOBS_LOCK:
-            JOBS[job_id] = {"status": "done", "video_filename": output_filename}
+        write_job_status(job_id, {"status": "done", "video_filename": output_filename})
     except Exception as e:
         traceback.print_exc()
-        with JOBS_LOCK:
-            JOBS[job_id] = {"status": "error", "error": str(e)}
+        write_job_status(job_id, {"status": "error", "error": str(e)})
 
 
 @app.route("/generate", methods=["POST"])
@@ -155,8 +177,9 @@ def generate():
 
         saved_image_paths.append(save_path)
 
-    with JOBS_LOCK:
-        JOBS[job_id] = {"status": "processing"}
+    # 스레드를 시작하기 "전에" 먼저 디스크에 상태를 기록해둔다.
+    # (스레드 시작 직후 프로세스가 죽더라도 최소한 "처리 시작함" 기록은 남게 하기 위함)
+    write_job_status(job_id, {"status": "processing"})
 
     thread = threading.Thread(
         target=process_job,
@@ -171,14 +194,17 @@ def generate():
 
 @app.route("/status/<job_id>")
 def job_status(job_id):
-    with JOBS_LOCK:
-        job = JOBS.get(job_id)
+    job = read_job_status(job_id)
 
     if job is None:
-        flash("존재하지 않거나 만료된 작업이에요. 다시 시도해주세요.")
+        flash("존재하지 않는 작업이에요. 다시 시도해주세요.")
         return redirect(url_for("index"))
 
     if job["status"] == "processing":
+        elapsed = time.time() - job.get("_updated_at", time.time())
+        if elapsed > JOB_STALE_SECONDS:
+            flash("영상 생성이 예상보다 오래 걸리고 있어요. 서버가 재시작되었을 수 있으니 다시 시도해주세요.")
+            return redirect(url_for("index"))
         return render_template("processing.html", job_id=job_id)
     elif job["status"] == "error":
         flash(f"영상 생성 중 오류가 발생했습니다: {job['error']}")
