@@ -22,7 +22,7 @@ import re
 import gc
 from PIL import Image, ImageDraw, ImageFont
 
-VIDEO_W, VIDEO_H = 1080, 1920
+VIDEO_W, VIDEO_H = 720, 1280  # 무료 서버(512MB) 메모리 한도에 맞춰 해상도를 낮춤 (Veo 기본 해상도 720p와도 일치)
 FONT_BOLD = "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc"
 FONT_REGULAR = "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
 
@@ -220,6 +220,11 @@ def generate_ai_scene_video(prompt: str, out_path: str, api_key: str,
     generated_video = operation.response.generated_videos[0]
     client.files.download(file=generated_video.video)
     generated_video.video.save(out_path)
+
+    # 무거운 객체(구글 클라이언트, 응답 등)를 최대한 빨리 메모리에서 해제
+    del client, operation, generated_video
+    gc.collect()
+
     return out_path
 
 
