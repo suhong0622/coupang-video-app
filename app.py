@@ -50,8 +50,16 @@ def require_login():
     )
 
 
+@app.route("/healthz")
+def healthz():
+    # Render가 서버 생존 확인용으로 주기적으로 찌르는 경로. 비밀번호 없이 항상 200을 반환해야 함.
+    return "OK", 200
+
+
 @app.before_request
 def restrict_access():
+    if request.path == "/healthz":
+        return  # 헬스체크는 잠금 예외
     if not SITE_PASSWORD:
         return  # 비밀번호 미설정 시 잠금 없음 (로컬 개인 실행 기본값)
     auth = request.authorization
@@ -143,3 +151,4 @@ if __name__ == "__main__":
     if is_local:
         print(f"\n브라우저에서 http://localhost:{port} 으로 접속하세요.\n")
     app.run(host="0.0.0.0", port=port, debug=is_local)
+
