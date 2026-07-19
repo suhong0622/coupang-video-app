@@ -1,5 +1,7 @@
 import os
 import uuid
+import threading
+import traceback
 from flask import Flask, request, render_template, send_from_directory, flash, redirect, url_for, Response
 from PIL import Image
 
@@ -16,6 +18,15 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 app = Flask(__name__)
 app.secret_key = "local-dev-only"  # 개인 로컬 실행용이라 간단하게 둠
 app.config["MAX_CONTENT_LENGTH"] = 80 * 1024 * 1024  # 요청 전체 최대 80MB (메모리 보호용)
+
+# ---------------------------------------------------------------------------
+# 작업 상태 저장소: 영상 생성을 백그라운드 스레드에서 처리하고,
+# 진행 상태를 여기에 기록해서 "처리 중" 화면이 확인할 수 있게 함.
+# 이렇게 하면 실제 영상 처리가 오래 걸려도 웹 서버 자체는 항상 즉시 응답 가능한 상태를 유지해서,
+# Render의 헬스체크가 타임아웃 나는 문제를 근본적으로 피할 수 있음.
+# ---------------------------------------------------------------------------
+JOBS = {}
+JOBS_LOCK = threading.Lock()
 
 # .env 파일이 있으면 읽어서 환경변수로 등록 (python-dotenv 없이 직접 처리)
 def load_env_file():
@@ -72,6 +83,33 @@ def index():
     return render_template("index.html")
 
 
+def process_job(job_id, script_text, saved_image_paths, product_name, price_tag,
+                 api_key, voice_id, gemini_api_key):
+    """백그라운드 스레드에서 실제 영상 생성을 수행하고 결과를 JOBS에 기록."""
+    work_dir = os.path.join(UPLOAD_DIR, job_id, "work")
+    output_filename = f"video_{job_id}.mp4"
+    output_path = os.path.join(OUTPUT_DIR, output_filename)
+
+    try:
+        build_video(
+            script_text=script_text,
+            product_images=saved_image_paths,
+            product_name=product_name,
+            price_tag=price_tag,
+            work_dir=work_dir,
+            output_path=output_path,
+            api_key=api_key,
+            voice_id=voice_id,
+            gemini_api_key=gemini_api_key,
+        )
+        with JOBS_LOCK:
+            JOBS[job_id] = {"status": "done", "video_filename": output_filename}
+    except Exception as e:
+        traceback.print_exc()
+        with JOBS_LOCK:
+            JOBS[job_id] = {"status": "error", "error": str(e)}
+
+
 @app.route("/generate", methods=["POST"])
 def generate():
     product_name = request.form.get("product_name", "").strip()
@@ -117,27 +155,36 @@ def generate():
 
         saved_image_paths.append(save_path)
 
-    work_dir = os.path.join(UPLOAD_DIR, job_id, "work")
-    output_filename = f"video_{job_id}.mp4"
-    output_path = os.path.join(OUTPUT_DIR, output_filename)
+    with JOBS_LOCK:
+        JOBS[job_id] = {"status": "processing"}
 
-    try:
-        build_video(
-            script_text=script_text,
-            product_images=saved_image_paths,
-            product_name=product_name,
-            price_tag=price_tag,
-            work_dir=work_dir,
-            output_path=output_path,
-            api_key=api_key,
-            voice_id=voice_id,
-            gemini_api_key=gemini_api_key,
-        )
-    except Exception as e:
-        flash(f"영상 생성 중 오류가 발생했습니다: {e}")
+    thread = threading.Thread(
+        target=process_job,
+        args=(job_id, script_text, saved_image_paths, product_name, price_tag,
+              api_key, voice_id, gemini_api_key),
+        daemon=True,
+    )
+    thread.start()
+
+    return redirect(url_for("job_status", job_id=job_id))
+
+
+@app.route("/status/<job_id>")
+def job_status(job_id):
+    with JOBS_LOCK:
+        job = JOBS.get(job_id)
+
+    if job is None:
+        flash("존재하지 않거나 만료된 작업이에요. 다시 시도해주세요.")
         return redirect(url_for("index"))
 
-    return render_template("result.html", video_filename=output_filename)
+    if job["status"] == "processing":
+        return render_template("processing.html", job_id=job_id)
+    elif job["status"] == "error":
+        flash(f"영상 생성 중 오류가 발생했습니다: {job['error']}")
+        return redirect(url_for("index"))
+    else:
+        return render_template("result.html", video_filename=job["video_filename"])
 
 
 @app.route("/download/<path:filename>")
