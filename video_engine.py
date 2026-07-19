@@ -19,6 +19,7 @@ import subprocess
 import textwrap
 import time
 import re
+import gc
 from PIL import Image, ImageDraw, ImageFont
 
 VIDEO_W, VIDEO_H = 1080, 1920
@@ -243,7 +244,7 @@ def render_scene_clip(image_path: str, audio_path: str, out_path: str):
             "-t", str(duration + 0.3),
             "-r", "30",
             "-vf", f"scale={VIDEO_W}:{VIDEO_H}",
-            "-c:v", "libx264", "-pix_fmt", "yuv420p",
+            "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
             "-c:a", "aac", "-ar", "44100", "-ac", "2",
             "-shortest",
             out_path,
@@ -275,7 +276,7 @@ def render_video_scene_clip(video_path: str, overlay_path: str, audio_path: str,
             ),
             "-map", "[outv]", "-map", "2:a",
             "-r", "30",
-            "-c:v", "libx264", "-pix_fmt", "yuv420p",
+            "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
             "-c:a", "aac", "-ar", "44100", "-ac", "2",
             "-shortest",
             out_path,
@@ -296,7 +297,7 @@ def concat_clips(clip_paths, list_file_path, final_path):
         [
             "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", list_file_path,
             "-r", "30", "-pix_fmt", "yuv420p",
-            "-c:v", "libx264", "-profile:v", "main", "-level", "3.1",
+            "-c:v", "libx264", "-preset", "ultrafast", "-profile:v", "main", "-level", "3.1",
             "-c:a", "aac", "-ar", "44100", "-ac", "2", "-b:a", "128k",
             "-movflags", "+faststart",
             final_path,
@@ -358,6 +359,7 @@ def build_video(script_text: str, product_images: list[str], product_name: str,
                 render_scene_clip(scene_image, narration_audio, clip_path)
 
         clip_paths.append(clip_path)
+        gc.collect()  # 장면마다 즉시 메모리 정리 (무료 서버 메모리 한도 대응)
 
     list_file = os.path.join(work_dir, "concat_list.txt")
     concat_clips(clip_paths, list_file, output_path)
