@@ -5,7 +5,7 @@ from PIL import Image
 
 from video_engine import build_video, is_video_file
 
-MAX_IMAGE_DIMENSION = 1600  # 이보다 큰 사진은 자동으로 줄여서 메모리 사용량을 낮춘다
+MAX_IMAGE_DIMENSION = 1280  # 이보다 큰 사진은 자동으로 줄여서 메모리 사용량을 낮춘다 (무료 서버 512MB 대응)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
@@ -151,4 +151,3 @@ if __name__ == "__main__":
     if is_local:
         print(f"\n브라우저에서 http://localhost:{port} 으로 접속하세요.\n")
     app.run(host="0.0.0.0", port=port, debug=is_local)
-
