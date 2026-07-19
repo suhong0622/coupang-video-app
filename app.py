@@ -5,7 +5,7 @@ from PIL import Image
 
 from video_engine import build_video, is_video_file
 
-MAX_IMAGE_DIMENSION = 1280  # 이보다 큰 사진은 자동으로 줄여서 메모리 사용량을 낮춘다 (무료 서버 512MB 대응)
+MAX_IMAGE_DIMENSION = 960  # 이보다 큰 사진은 자동으로 줄여서 메모리 사용량을 낮춘다 (무료 서버 512MB 대응)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
