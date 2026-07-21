@@ -32,32 +32,35 @@ VIDEO_EXTENSIONS = {".mp4", ".mov", ".webm", ".m4v", ".avi", ".mkv"}
 # ---------------------------------------------------------------------------
 # 1) 대본을 장면 단위로 나누기
 # ---------------------------------------------------------------------------
-AI_TAG_PATTERN = re.compile(r"^\[\s*AI\s*[:：]\s*(.+?)\s*\]$")
+# "한 줄 = 한 장면" 방식. 빈 줄 유무는 신경 쓸 필요 없음 (있어도 무시됨).
+# AI로 생성할 장면은 그 줄 안에 [AI: 프롬프트] 를 쓰고, 닫는 대괄호 뒤에 자막/나레이션을 이어 쓴다.
+#   예) [AI: 이 무릎보호대를 낀 남자가 뛰는 모습] 착용하고 마음껏 뛰어보세요.
+AI_TAG_PATTERN = re.compile(r"^\[\s*AI\s*[:：]\s*(.+?)\s*\]\s*(.*)$")
 
 
 def split_script(script_text: str):
-    """빈 줄(엔터 두 번)을 기준으로 장면을 나눈다.
-    각 장면의 첫 줄이 '[AI: 프롬프트]' 형식이면, 그 장면은 사진/영상 업로드 대신
-    Veo(제미나이) AI가 그 프롬프트로 새 영상을 생성하도록 표시한다.
+    """줄 단위로 장면을 나눈다 (빈 줄은 그냥 건너뜀, 필수 아님).
+    한 줄이 '[AI: 프롬프트] 자막' 형식이면 그 장면은 사진/영상 업로드 대신
+    Veo(제미나이) AI가 프롬프트로 새 영상을 생성하도록 표시한다.
+    닫는 대괄호 뒤에 자막이 없으면, 프롬프트 자체를 자막/나레이션으로도 사용한다.
 
     반환값: [{"caption": str, "ai_prompt": str|None}, ...]
     """
-    raw_blocks = [b.strip() for b in script_text.strip().split("\n\n")]
-    raw_blocks = [b for b in raw_blocks if b]
-    if not raw_blocks:
-        raw_blocks = [script_text.strip()]
+    lines = [ln.strip() for ln in script_text.strip().split("\n")]
+    lines = [ln for ln in lines if ln]  # 빈 줄 제거
 
     scenes = []
-    for block in raw_blocks:
-        lines = [ln.strip() for ln in block.split("\n") if ln.strip()]
-        ai_prompt = None
-        if lines:
-            m = AI_TAG_PATTERN.match(lines[0])
-            if m:
-                ai_prompt = m.group(1)
-                lines = lines[1:]
-        caption = " ".join(lines) if lines else (ai_prompt or "")
-        scenes.append({"caption": caption, "ai_prompt": ai_prompt})
+    for line in lines:
+        m = AI_TAG_PATTERN.match(line)
+        if m:
+            ai_prompt = m.group(1).strip()
+            caption = m.group(2).strip() or ai_prompt
+            scenes.append({"caption": caption, "ai_prompt": ai_prompt})
+        else:
+            scenes.append({"caption": line, "ai_prompt": None})
+
+    if not scenes:
+        scenes = [{"caption": script_text.strip(), "ai_prompt": None}]
     return scenes
 
 
@@ -192,7 +195,7 @@ VEO_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 
 def generate_ai_scene_video(prompt: str, out_path: str, api_key: str,
                              reference_image_path: str | None = None,
-                             model: str = "veo-3.1-fast-generate-preview",
+                             model: str = "veo-3.1-generate-preview",
                              aspect_ratio: str = "9:16"):
     """제미나이 API(Veo 3.1)로 텍스트/이미지 -> 영상을 생성한다 (REST 직접 호출, SDK 미사용).
     - api_key: Google AI Studio에서 발급받은 Gemini API 키 (구독과는 별개, 종량제 과금)
