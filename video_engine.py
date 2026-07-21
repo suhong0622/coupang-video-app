@@ -182,49 +182,75 @@ def build_caption_overlay(caption: str, out_path: str,
 
 
 # ---------------------------------------------------------------------------
-# 3-C) AI로 새 영상 장면 생성 (Google Veo 3.1, Gemini API)
+# 3-C) AI로 새 영상 장면 생성 (Google Veo 3.1, Gemini API — REST 직접 호출)
 # ---------------------------------------------------------------------------
+# 구글 공식 SDK(google-genai)는 내부적으로 grpc/protobuf를 불러오면서 그것만으로
+# 메모리를 80MB 이상 차지한다. 무료 서버(512MB) 환경에서는 이게 크리티컬하기 때문에,
+# 여기서는 SDK 없이 순수 REST 호출(requests)만으로 동일한 기능을 구현한다.
+VEO_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
+
+
 def generate_ai_scene_video(prompt: str, out_path: str, api_key: str,
                              reference_image_path: str | None = None,
                              model: str = "veo-3.1-fast-generate-preview",
                              aspect_ratio: str = "9:16"):
-    """제미나이 API(Veo 3.1)로 텍스트/이미지 -> 영상을 생성한다.
+    """제미나이 API(Veo 3.1)로 텍스트/이미지 -> 영상을 생성한다 (REST 직접 호출, SDK 미사용).
     - api_key: Google AI Studio에서 발급받은 Gemini API 키 (구독과는 별개, 종량제 과금)
     - reference_image_path: 상품 일관성을 위해 함께 넣을 참고 이미지 (선택)
     - 생성에 최소 11초 ~ 최대 6분 정도 걸릴 수 있음 (Google 공식 문서 기준)
     """
-    from google import genai
-    from google.genai import types
+    import requests
+    import base64
 
-    client = genai.Client(api_key=api_key)
+    headers = {"x-goog-api-key": api_key, "Content-Type": "application/json"}
 
-    kwargs = {
-        "model": model,
-        "prompt": prompt,
-        "config": types.GenerateVideosConfig(aspect_ratio=aspect_ratio),
-    }
-
+    instance = {"prompt": prompt}
     if reference_image_path and not is_video_file(reference_image_path):
         with open(reference_image_path, "rb") as f:
             image_bytes = f.read()
         mime_type = mimetypes.guess_type(reference_image_path)[0] or "image/jpeg"
-        kwargs["image"] = types.Image(image_bytes=image_bytes, mime_type=mime_type)
+        instance["image"] = {
+            "bytesBase64Encoded": base64.b64encode(image_bytes).decode("utf-8"),
+            "mimeType": mime_type,
+        }
+        del image_bytes  # base64 인코딩 끝나면 원본 바이트는 바로 정리
 
-    operation = client.models.generate_videos(**kwargs)
+    payload = {"instances": [instance], "parameters": {"aspectRatio": aspect_ratio}}
+
+    resp = requests.post(
+        f"{VEO_BASE_URL}/models/{model}:predictLongRunning",
+        headers=headers, json=payload, timeout=60,
+    )
+    resp.raise_for_status()
+    operation_name = resp.json()["name"]
+    del payload, resp
 
     # 영상 생성은 시간이 오래 걸리는 비동기 작업이라, 완료될 때까지 주기적으로 확인한다.
-    while not operation.done:
+    operation_url = f"{VEO_BASE_URL}/{operation_name}"
+    data = None
+    while True:
         time.sleep(10)
-        operation = client.operations.get(operation)
+        poll_resp = requests.get(operation_url, headers=headers, timeout=30)
+        poll_resp.raise_for_status()
+        data = poll_resp.json()
+        if data.get("done"):
+            break
 
-    generated_video = operation.response.generated_videos[0]
-    client.files.download(file=generated_video.video)
-    generated_video.video.save(out_path)
+    if "error" in data:
+        raise RuntimeError(f"Veo 영상 생성 실패: {data['error']}")
 
-    # 무거운 객체(구글 클라이언트, 응답 등)를 최대한 빨리 메모리에서 해제
-    del client, operation, generated_video
+    video_uri = data["response"]["generateVideoResponse"]["generatedSamples"][0]["video"]["uri"]
+    del data
+
+    # 영상을 메모리에 통째로 올리지 않고, 파일로 바로 스트리밍 저장 (메모리 절약 핵심)
+    with requests.get(video_uri, headers=headers, stream=True, timeout=180) as video_resp:
+        video_resp.raise_for_status()
+        with open(out_path, "wb") as f:
+            for chunk in video_resp.iter_content(chunk_size=256 * 1024):
+                if chunk:
+                    f.write(chunk)
+
     gc.collect()
-
     return out_path
 
 
